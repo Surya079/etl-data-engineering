@@ -1,0 +1,256 @@
+---
+x-airflow-common:
+  &airflow-common
+  # Your custom Airflow image
+  build: 
+    context: .
+    dockerfile: Dockerfile  # Your existing Dockerfile
+  image: custom-airflow:latest
+  env_file:
+    - .env
+  environment:
+    &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${METADATA_DATABASE_USERNAME}:${METADATA_DATABASE_PASSWORD}@${POSTGRES_CONN_HOST}:${POSTGRES_CONN_PORT}/${METADATA_DATABASE_NAME}
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${CELERY_BACKEND_USERNAME}:${CELERY_BACKEND_PASSWORD}@${POSTGRES_CONN_HOST}:${POSTGRES_CONN_PORT}/${CELERY_BACKEND_NAME}
+    AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
+    AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session'
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    
+    # Database connections
+    AIRFLOW_CONN_POSTGRES_DB_YT_ELT: 'postgresql://${ELT_DATABASE_USERNAME}:${ELT_DATABASE_PASSWORD}@${POSTGRES_CONN_HOST}:${POSTGRES_CONN_PORT}/${ELT_DATABASE_NAME}'
+    
+    # FIXED: Correct variable names
+    AIRFLOW_VAR_TRANSACTION_PARAM_KEY: ${TRANSACTION_PARAM_KEY}
+    AIRFLOW_VAR_USERS_PARAM_KEY: ${USERS_PARAM_KEY}
+    AIRFLOW_VAR_MERCH_CATEGY_PARAM_KEY: ${MERCH_CATEGY_PARAM_KEY}
+    AIRFLOW_VAR_FRAUD_LABELS_PARAM_KEY: ${FRAUD_LABELS_PARAM_KEY}
+    
+    # ADDED: FastAPI URL
+    AIRFLOW_VAR_FASTAPI_URL: "http://fastapi:8000"
+    
+    # Postgres variables
+    ELT_DATABASE_NAME: ${ELT_DATABASE_NAME}
+    ELT_DATABASE_USERNAME: ${ELT_DATABASE_USERNAME}
+    ELT_DATABASE_PASSWORD: ${ELT_DATABASE_PASSWORD}
+    POSTGRES_CONN_HOST: ${POSTGRES_CONN_HOST}
+    POSTGRES_CONN_PORT: ${POSTGRES_CONN_PORT}
+    
+  volumes:
+    - ./config:/opt/airflow/config
+    - ./dags:/opt/airflow/dags
+    - ./data:/opt/airflow/data
+    - ./include:/opt/airflow/include
+    - ./logs:/opt/airflow/logs
+    - ./plugins:/opt/airflow/plugins
+    - ./tests:/opt/airflow/tests
+  user: "${AIRFLOW_UID}:0"
+  networks:
+    - data-pipeline-net
+  depends_on:
+    &airflow-common-depends-on
+    redis:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+
+services:
+ 
+  # FASTAPI SERVICE
+  fastapi:
+    build: 
+      context: ./raw_api
+      dockerfile: Dockerfile
+    container_name: fastapi-server
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./raw_api:/app
+      - ./raw_api/data:/app/data
+    networks:
+      - data-pipeline-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: always
+
+  postgres:
+    container_name: postgres
+    image: postgres:13
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER=${POSTGRES_CONN_USERNAME}
+      - POSTGRES_PASSWORD=${POSTGRES_CONN_PASSWORD}
+    ports:
+      - 5432:5432
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+      - ./docker/postgres/init-multiple-databases.sh:/docker-entrypoint-initdb.d/init-multiple-databases.sh
+    networks:
+      - data-pipeline-net
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_CONN_USERNAME}", "-d", "${METADATA_DATABASE_NAME}"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+ 
+  redis:
+    image: redis:7.2-bookworm
+    container_name: redis
+    expose:
+      - 6379
+    networks:
+      - data-pipeline-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 30s
+      retries: 50
+      start_period: 30s
+    restart: always
+ 
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    container_name: airflow-webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+      fastapi:
+        condition: service_healthy
+ 
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    container_name: airflow-scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+      fastapi:
+        condition: service_healthy
+ 
+  airflow-worker:
+    <<: *airflow-common
+    command: celery worker
+    container_name: airflow-worker
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - 'celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}" || celery --app airflow.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}"'
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    environment:
+      <<: *airflow-common-env
+      DUMB_INIT_SETSID: "0"
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+      fastapi:
+        condition: service_healthy
+ 
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    container_name: airflow-init
+    command:
+      - -c
+      - |
+        if [[ -z "${AIRFLOW_UID}" ]]; then
+          echo
+          echo -e "\033[1;33mWARNING!!!: AIRFLOW_UID not set!\e[0m"
+          echo "If you are on Linux, you SHOULD follow the instructions below to set "
+          echo "AIRFLOW_UID environment variable, otherwise files will be owned by root."
+          echo
+        fi
+        one_meg=1048576
+        mem_available=$$(($$(getconf _PHYS_PAGES) * $$(getconf PAGE_SIZE) / one_meg))
+        cpus_available=$$(grep -cE 'cpu[0-9]+' /proc/stat)
+        disk_available=$$(df / | tail -1 | awk '{print $$4}')
+        warning_resources="false"
+        if (( mem_available < 4000 )) ; then
+          echo
+          echo -e "\033[1;33mWARNING!!!: Not enough memory available for Docker.\e[0m"
+          echo "At least 4GB of memory required. You have $$(numfmt --to iec $$((mem_available * one_meg)))"
+          echo
+          warning_resources="true"
+        fi
+        if (( cpus_available < 2 )); then
+          echo
+          echo -e "\033[1;33mWARNING!!!: Not enough CPUS available for Docker.\e[0m"
+          echo "At least 2 CPUs recommended. You have $${cpus_available}"
+          echo
+          warning_resources="true"
+        fi
+        if (( disk_available < one_meg * 10 )); then
+          echo
+          echo -e "\033[1;33mWARNING!!!: Not enough Disk space available for Docker.\e[0m"
+          echo "At least 10 GBs recommended. You have $$(numfmt --to iec $$((disk_available * 1024 )))"
+          echo
+          warning_resources="true"
+        fi
+        if [[ $${warning_resources} == "true" ]]; then
+          echo
+          echo -e "\033[1;33mWARNING!!!: You have not enough resources to run Airflow (see above)!\e[0m"
+          echo
+        fi
+        mkdir -p /sources/dags /sources/data /sources/include /sources/logs /sources/tests
+        chown -R "${AIRFLOW_UID}:0" /sources/{dags,data,include,logs,tests}
+        exec /entrypoint airflow version
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_WWW_USER_USERNAME}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_WWW_USER_PASSWORD}
+    user: "0:0"
+    volumes:
+      - .:/sources
+ 
+  airflow-cli:
+    <<: *airflow-common
+    profiles:
+      - debug
+    environment:
+      <<: *airflow-common-env
+      CONNECTION_CHECK_MAX_COUNT: "0"
+    command:
+      - bash
+      - -c
+      - airflow
+
+volumes:
+  postgres-db-volume:
+
+networks:
+  data-pipeline-net:
+    driver: bridge
