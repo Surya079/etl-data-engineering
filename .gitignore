@@ -41,6 +41,8 @@ airflow-webserver.pid
 data/raw/*
 !data/raw/.gitkeep
 
+raw_api/data/*
+
 # -----------------------------
 # Python Cache
 # -----------------------------
