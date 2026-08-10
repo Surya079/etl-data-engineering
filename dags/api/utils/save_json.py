@@ -13,5 +13,5 @@ def save_json(data, prefix):
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
 
-    return filename
+    return str(filename)
 

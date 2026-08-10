@@ -5,7 +5,7 @@ x-airflow-common:
   build: 
     context: .
     dockerfile: Dockerfile  # Your existing Dockerfile
-  image: custom-airflow:latest
+  image: ${DOCKERHUB_NAMESPACE}/${DOCKERHUB_REPOSITORY}:${IMAGE_TAG}
   env_file:
     - .env
   environment:
@@ -79,7 +79,17 @@ services:
       retries: 3
       start_period: 40s
     restart: always
-
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    networks:
+      - data-pipeline-net
+    restart: always
   postgres:
     container_name: postgres
     image: postgres:13

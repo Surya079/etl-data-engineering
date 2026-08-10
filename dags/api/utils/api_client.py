@@ -1,7 +1,7 @@
 import requests
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, date
 import os
 import time
 
@@ -16,7 +16,7 @@ def check_api_health():
     except:
         return False
 
-def fetch_api(endpoint, params=None, filename_prefix="data", max_retries=3):
+def fetch_api(endpoint, params=None, filename_prefix="data", max_retries=3, save=True):
     """Fetch data from API with retry logic"""
     
     # Check if API is up
@@ -33,13 +33,16 @@ def fetch_api(endpoint, params=None, filename_prefix="data", max_retries=3):
         try:
             print(f"📡 Calling: {url} (attempt {attempt + 1}/{max_retries})")
             
-            response = requests.get(url, params=params, timeout=30)
+            response = requests.get(url, params=params)
             response.raise_for_status()
             
             data = response.json()
-            file_path = save_json(data, filename_prefix)
-            print(f"✅ Saved -> {file_path}")
             
+            if save:
+                file_path = save_json(data, filename_prefix)
+                print(f"✅ Saved -> {file_path}")
+            else:
+                print(f"✅ Data fetched (not saved)")
             return data
             
         except requests.exceptions.ConnectionError as e:
@@ -60,10 +63,10 @@ def save_json(data, prefix):
     folder = Path(airflow_home) / "data" / "raw"
     folder.mkdir(parents=True, exist_ok=True)
     
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = folder / f"{prefix}_{timestamp}.json"
+    timestamp = date.today()
+    filename = folder / f"tran_data_{timestamp}.json"
     
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
     
-    return filename
+    return str(filename)

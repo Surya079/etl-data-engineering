@@ -1,0 +1,9 @@
+checks for core.transaction_api:
+  - row_count > 0:
+      name: Table is not empty
+  - missing_count(transaction_id) = 0:
+      name: Every transaction has an ID
+  - duplicate_count(transaction_id) = 0:
+      name: No duplicate transaction IDs
+  # - freshness(transaction_date) < 2d:
+      # name: Data is not older than 2 days

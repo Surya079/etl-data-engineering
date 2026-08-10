@@ -67,4 +67,3 @@ echo "Trigger DAG: docker exec airflow-scheduler airflow dags trigger produce_js
 
 chmod +x test_integration.sh
 ./test_integration.sh
-
