@@ -281,7 +281,7 @@ class TestTransformStagingToCore:
             'credit_score': 700,
             'num_credit_cards': 2,
             'card_id': 789,
-            'amount': Decimal('75.50'),
+            'amount': 75.50,
             'use_chip': 'Chip Transaction',
             'merchant_id': 999,
             'merchant_city': 'Austin',
