@@ -4,13 +4,34 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-def clean_amount(amount_str):
-    """Convert '$ -77.00' to Decimal(-77.00)."""
-    try:
-        return Decimal(amount_str.replace('$', '').replace(',', '').strip())
-    except (InvalidOperation, AttributeError):
+def clean_amount(amount):
+    """
+    Convert a raw amount value (str, float, Decimal, int) to Decimal.
+    Returns None if the value cannot be converted.
+    """
+    if amount is None:
         return None
 
+    # Already a Decimal – return as is
+    if isinstance(amount, Decimal):
+        return amount
+
+    # Numeric types (float, int) – convert via string to avoid float precision issues
+    if isinstance(amount, (int, float)):
+        try:
+            return Decimal(str(amount))
+        except InvalidOperation:
+            return None
+
+    # String – strip currency symbols and commas, then parse
+    if isinstance(amount, str):
+        try:
+            return Decimal(amount.replace('$', '').replace(',', '').strip())
+        except InvalidOperation:
+            return None
+
+    # Unsupported type
+    return None
 def determine_age_group(age):
     if age is None:
         return 'Unknown'
