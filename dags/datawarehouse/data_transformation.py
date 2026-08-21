@@ -57,16 +57,37 @@ def build_core_row(transaction, user_info, mcc_mapping, fraud_label):
     else:
         current_age = user_info.get('current_age')
         gender = user_info.get('gender', 'Unknown')
-        per_capita_income = user_info.get('per_capita_income')
-        yearly_income = user_info.get('yearly_income')
-        total_debt = user_info.get('total_debt')
+         # ---- Income / Debt ----
+        per_capita_income = clean_amount(user_info.get('per_capita_income', '$0')) or Decimal('0.0')
+        yearly_income = clean_amount(user_info.get('yearly_income', '$0')) or Decimal('0.0')
+        total_debt = clean_amount(user_info.get('total_debt', '$0')) or Decimal('0.0')
         credit_score = user_info.get('credit_score')
-        num_credit_cards = user_info.get('num_credit_cards')
+        # ---- Other numeric fields ----
+        num_credit_cards = int(user_info.get('num_credit_cards', 0)) if user_info.get('num_credit_cards') else 0
 
-    age_group = determine_age_group(current_age)
+    
+    if current_age is not None:
+        age_group = determine_age_group(current_age)
+    else:
+        age_group = 'Unknown'
+
 
     # Amount
     amount = clean_amount(transaction.get('amount', '0'))
+    if amount is None:
+        amount = Decimal('0.0')
+
+    # ---- Transaction type ----
+    txn_type = transaction.get('use_chip', 'Other')
+    if txn_type not in ('Swipe Transaction', 'Chip Transaction', 'Online Transaction'):
+        txn_type = 'Other'
+
+    # ---- Credit score ----
+    
+    if credit_score is None:
+        credit_score = 0
+    else:
+        credit_score = int(credit_score)
 
     # Merchant
     merchant_id = int(transaction.get('merchant_id', 0))
@@ -83,14 +104,14 @@ def build_core_row(transaction, user_info, mcc_mapping, fraud_label):
     is_fraud_str = fraud_label if fraud_label else 'No'
     is_fraud_bool = (is_fraud_str.lower() == 'yes')
 
-    return {
-        'transaction_id': txn_id,
+    core_row = {
+         'transaction_id': int(transaction.get('id', transaction.get('transaction_id'))),
         'transaction_date': txn_date.date() if txn_date else None,
         'client_id': client_id,
         'age_group': age_group,
-        'gender': gender,
-        'city': merchant_city,
-        'state': merchant_state,
+        'gender': user_info.get('gender', 'Unknown'),
+        'city': merchant_city or 'Unknown',
+        'state': merchant_state or 'Unknown',
         'per_capita_income': per_capita_income,
         'yearly_income': yearly_income,
         'total_debt': total_debt,
@@ -98,7 +119,7 @@ def build_core_row(transaction, user_info, mcc_mapping, fraud_label):
         'credit_cards_count': num_credit_cards,
         'card_id': int(transaction.get('card_id', 0)),
         'amount': amount,
-        'transaction_type': transaction.get('use_chip', 'Swipe Transaction'),
+        'transaction_type': txn_type,
         'merchant_id': merchant_id,
         'merchant_city': merchant_city,
         'merchant_state': merchant_state,
@@ -108,6 +129,7 @@ def build_core_row(transaction, user_info, mcc_mapping, fraud_label):
         'is_fraud': is_fraud_bool,
         'error_flag': bool(transaction.get('errors')),
     }
+    return core_row
 
 def transform_transactions(raw_data):
     """

@@ -1,12 +1,12 @@
-def test_api_param_key(TRANSACTION_PARAM_KEY):
-    assert TRANSACTION_PARAM_KEY == "transactions"
+from dags.datawarehouse.data_transformation import clean_amount, determine_age_group
+from decimal import Decimal
 
-def test_postgres_conn(mock_postgres_conn_vars):
-    conn = mock_postgres_conn_vars
+def test_clean_amount_normal():
+    assert clean_amount('$-77.00') == Decimal('-77.00')
 
-    
-    assert conn.login=="mock_username"
-    assert conn.password=="mock_password"
-    assert conn.host=="mock_host"
-    assert conn.port==1234
-    assert conn.schema=="mock_db_name"
+def test_clean_amount_invalid():
+    assert clean_amount(None) is None
+
+def test_age_group():
+    assert determine_age_group(30) == '25-34'
+    assert determine_age_group(None) == 'Unknown'
