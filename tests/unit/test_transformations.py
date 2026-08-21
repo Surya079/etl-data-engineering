@@ -48,9 +48,13 @@ class TestCleanAmount:
         assert clean_amount(raw) is None
 
     def test_handles_non_string_input(self):
-        # Should not crash; returns None for unsupported types
-        assert clean_amount(123) is None
+        # Numeric types are now supported and converted to Decimal
+        assert clean_amount(123) == Decimal('123')
+        assert clean_amount(45.67) == Decimal('45.67')
+        assert clean_amount(Decimal('99.90')) == Decimal('99.90')
+        # Unsupported types return None
         assert clean_amount(["$100"]) is None
+        assert clean_amount({"amount": "$100"}) is None
 
 
 # ---------------------------------------------------------------------
