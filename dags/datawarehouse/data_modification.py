@@ -1,6 +1,6 @@
 import logging
 from psycopg2.extras import execute_values
-from data_utils import get_conn_cursor, close_conn_cur
+from .data_utils import get_conn_cursor, close_conn_cur
 
 logger = logging.getLogger(__name__)
 
