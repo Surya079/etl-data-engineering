@@ -78,7 +78,7 @@ jobs:
       # Unit tests are fast and test pure functions (transforms, helpers)
       - name: Run unit tests
         run: |
-          pytest -m tests/ -v --cov=datawarehouse --cov=api --cov-report=xml
+          python -m pytest tests/ -v --cov=datawarehouse --cov=api --cov-report=xml
 
       # Step 5: Run integration tests
       # Integration tests connect to the PostgreSQL service container
